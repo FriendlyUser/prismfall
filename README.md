@@ -70,7 +70,8 @@ git push origin v1.0.0
 ### Google Play checklist
 - Upload `prismfall-<version>.aab` from the release (internal testing track first).
 - Store icon: `assets/icons/icon_512.png`. Screenshots: capture from a device/emulator.
-- Still needed by you: 1024x500 feature graphic, privacy policy URL (the game collects no data, saves locally only), content rating questionnaire.
+- Privacy policy: `docs/privacy.html`, deployed with the web build to `https://<user>.github.io/prismfall/privacy.html`.
+- Still needed by you: 1024x500 feature graphic, content rating questionnaire.
 
 ## Local builds
 Godot 4.7.2 with export templates installed (Editor → Manage Export Templates):

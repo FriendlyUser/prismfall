@@ -47,6 +47,8 @@ jobs:
           test -f build/web/index.pck
           # GitHub Pages: don't run Jekyll over the build
           touch build/web/.nojekyll
+          # Privacy policy for the Play listing: https://<user>.github.io/prismfall/privacy.html
+          cp docs/privacy.html build/web/privacy.html
           ls -la build/web
 
       - uses: actions/upload-artifact@v4
