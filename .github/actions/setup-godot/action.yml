@@ -1,0 +1,46 @@
+name: Setup Godot
+description: Downloads the headless Godot editor and only the export templates a job needs (cached).
+
+inputs:
+  templates:
+    description: Space-separated template file names from the .tpz (e.g. "web_nothreads_release.zip")
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Godot + templates
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local/bin/godot
+          ~/.local/share/godot/export_templates
+        key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}-${{ inputs.templates }}
+
+    - name: Download Godot
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        V="${GODOT_VERSION}-${GODOT_RELEASE}"
+        BASE="https://github.com/godotengine/godot/releases/download/${V}"
+        mkdir -p ~/.local/bin
+        curl -fsSL --retry 3 -o /tmp/godot.zip "${BASE}/Godot_v${V}_linux.x86_64.zip"
+        unzip -q /tmp/godot.zip -d /tmp/godot
+        mv "/tmp/godot/Godot_v${V}_linux.x86_64" ~/.local/bin/godot
+        chmod +x ~/.local/bin/godot
+        curl -fsSL --retry 3 -o /tmp/templates.tpz "${BASE}/Godot_v${V}_export_templates.tpz"
+        DEST="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}"
+        mkdir -p "$DEST"
+        for f in version.txt ${{ inputs.templates }}; do
+          unzip -q -j /tmp/templates.tpz "templates/${f}" -d "$DEST"
+        done
+        rm -f /tmp/templates.tpz /tmp/godot.zip
+        ls -la "$DEST"
+
+    - name: Add Godot to PATH
+      shell: bash
+      run: |
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/bin/godot" --version

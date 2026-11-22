@@ -1,0 +1,52 @@
+{
+    "version":  1,
+    "viewport":  {
+                     "width":  1280,
+                     "height":  720
+                 },
+    "nodes":  [
+                  {
+                      "id":  "design-doc",
+                      "type":  "document",
+                      "title":  "PRISMFALL Design",
+                      "description":  "Main design document: template research, feature mapping, levels, visual direction and asset list.",
+                      "data":  {
+                                   "documentId":  "prismfall-design"
+                               }
+                  },
+                  {
+                      "id":  "icon-512",
+                      "type":  "asset",
+                      "title":  "App icon (production)",
+                      "description":  "Production launcher/store icon used by the Android export and web favicon.",
+                      "data":  {
+                                   "assetId":  "app-icon-512",
+                                   "mediaType":  "image"
+                               }
+                  },
+                  {
+                      "id":  "icon-adaptive-fg",
+                      "type":  "asset",
+                      "title":  "Adaptive icon foreground (production)",
+                      "description":  "Android adaptive icon foreground layer.",
+                      "data":  {
+                                   "assetId":  "adaptive-fg-432",
+                                   "mediaType":  "image"
+                               }
+                  },
+                  {
+                      "id":  "boot-splash",
+                      "type":  "asset",
+                      "title":  "Boot splash (production)",
+                      "description":  "Boot splash image for Android and web.",
+                      "data":  {
+                                   "assetId":  "boot-splash",
+                                   "mediaType":  "image"
+                               }
+                  }
+              ],
+    "edges":  [
+
+              ],
+    "id":  "9c23774e-6d1b-439b-926b-c94f58f2dc24"
+}

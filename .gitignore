@@ -1,0 +1,16 @@
+# Godot
+.godot/
+*.translation
+export_credentials.cfg
+
+# OhMyGame local builds
+.ohmygame/build/
+
+# Local export output + Android Gradle template (CI installs it fresh)
+build/
+android/
+
+# Signing material - never commit
+*.keystore
+*.jks
+*.p12

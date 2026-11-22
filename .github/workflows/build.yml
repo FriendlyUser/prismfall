@@ -1,0 +1,203 @@
+name: Build & Release
+
+# Web build  -> artifact + GitHub Pages (main branch and version tags)
+# Android    -> debug-signed APK on every push; signed release APK + Play Store AAB when
+#               the signing secrets exist; all files attached to a GitHub Release on v* tags.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.7.2"
+  GODOT_RELEASE: "stable"
+
+jobs:
+  # ------------------------------------------------------------------ WEB
+  web:
+    name: Web export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-godot
+        with:
+          templates: "web_nothreads_release.zip web_nothreads_debug.zip"
+
+      - name: Import assets
+        run: godot --headless --path . --import
+
+      - name: Export Web
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" build/web/index.html
+          test -f build/web/index.wasm
+          test -f build/web/index.pck
+          # GitHub Pages: don't run Jekyll over the build
+          touch build/web/.nojekyll
+          ls -la build/web
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prismfall-web
+          path: build/web
+          if-no-files-found: error
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: web
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && vars.DEPLOY_PAGES != 'false'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ------------------------------------------------------------------ ANDROID
+  android:
+    name: Android export
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: ./.github/actions/setup-godot
+        with:
+          templates: "android_release.apk android_debug.apk android_source.zip"
+
+      - name: Version from tag / run number
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+          else
+            VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          sed -i "s|^version/code=.*|version/code=${GITHUB_RUN_NUMBER}|" export_presets.cfg
+          sed -i "s|^version/name=.*|version/name=\"${VERSION_NAME}\"|" export_presets.cfg
+          echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_ENV"
+          grep -n "^version/" export_presets.cfg
+
+      - name: Configure Android SDK / JDK for Godot
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.7.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "${SDK}"
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          EOF
+          cat ~/.config/godot/editor_settings-4.7.tres
+
+      - name: Keystores
+        run: |
+          # Godot always needs a debug keystore; generate a throwaway one.
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/debug.keystore" -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" >/dev/null
+          {
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$RUNNER_TEMP/debug.keystore"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$RUNNER_TEMP/release.keystore"
+              echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=${ANDROID_KEY_ALIAS}"
+              echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=${ANDROID_KEYSTORE_PASSWORD}"
+              echo "SIGNED_RELEASE=true"
+            } >> "$GITHUB_ENV"
+            echo "Release keystore configured."
+          else
+            echo "::notice::No ANDROID_KEYSTORE_BASE64 secret - building a debug-signed APK only."
+          fi
+
+      - name: Import assets
+        run: godot --headless --path . --import
+
+      - name: Export APK
+        run: |
+          mkdir -p build/android
+          if [ "${SIGNED_RELEASE}" = "true" ]; then
+            godot --headless --path . --export-release "Android" "build/android/prismfall-${VERSION_NAME}.apk"
+          else
+            godot --headless --path . --export-debug "Android" "build/android/prismfall-${VERSION_NAME}-debug.apk"
+          fi
+          ls -la build/android
+          test -n "$(ls build/android/*.apk)"
+
+      - name: Export AAB (Google Play)
+        if: env.SIGNED_RELEASE == 'true'
+        run: |
+          # Install the Gradle build template (same as Project > Install Android Build Template)
+          TPL="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}"
+          rm -rf android
+          mkdir -p android/build
+          unzip -q "$TPL/android_source.zip" -d android/build
+          printf "%s" "${GODOT_VERSION}.${GODOT_RELEASE}" > android/.build_version
+          touch android/build/.gdignore
+          godot --headless --path . --export-release "Android-AAB" "build/android/prismfall-${VERSION_NAME}.aab"
+          ls -la build/android
+          test -f "build/android/prismfall-${VERSION_NAME}.aab"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prismfall-android
+          path: |
+            build/android/*.apk
+            build/android/*.aab
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------ RELEASE
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [web, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Package web build
+        run: |
+          cd dist/prismfall-web && zip -qr "../prismfall-web-${GITHUB_REF_NAME}.zip" . && cd -
+          ls -laR dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: PRISMFALL ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/prismfall-web-*.zip
+            dist/prismfall-android/*.apk
+            dist/prismfall-android/*.aab

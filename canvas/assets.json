@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "assets": {
+    "app-icon-512": {
+      "name": "App icon 512",
+      "path": "assets/icons/icon_512.png",
+      "description": "Launcher / store icon rasterised from the procedural SVG emblem (tools/bake_gfx.tscn)."
+    },
+    "adaptive-fg-432": {
+      "name": "Android adaptive icon foreground",
+      "path": "assets/icons/adaptive_fg_432.png",
+      "description": "Adaptive icon foreground layer, artwork inside the 66% safe zone."
+    },
+    "boot-splash": {
+      "name": "Boot splash",
+      "path": "assets/icons/splash.png",
+      "description": "Boot splash emblem shown on the dark clear colour."
+    }
+  }
+}
